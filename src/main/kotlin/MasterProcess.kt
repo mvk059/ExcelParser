@@ -2,7 +2,10 @@ package org.mvk
 
 import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.ss.usermodel.WorkbookFactory
+import org.jdom2.CDATA
+import org.jdom2.Content
 import org.jdom2.Element
+import org.jdom2.Text
 import org.jdom2.output.Format
 import org.jdom2.output.XMLOutputter
 import java.io.File
@@ -20,10 +23,12 @@ fun main() {
     val resourceFolder = "src/main/resources"
     // Read the Excel file
     val excelFile = File("$resourceFolder/copy.xlsx")
+//    val excelFile = File("$resourceFolder/cdata_modified.xlsx")
     val workbook = WorkbookFactory.create(excelFile)
 
     // Read the original XML file
     val originalXmlFile = File("$resourceFolder/strings.xml")
+//    val originalXmlFile = File("$resourceFolder/stringscdata.xml")
     val doc = org.jdom2.input.SAXBuilder().build(originalXmlFile)
     val root = doc.rootElement
 
@@ -42,7 +47,7 @@ fun main() {
 
     root.children.forEach { stringElement ->
         val id = stringElement.getAttributeValue("name")
-        val englishString = stringElement.text.trim()
+        val englishString = getFullText(stringElement) //stringElement.text//.trim()
         val isTranslatable = stringElement.getAttributeValue("translatable")?.toBoolean() ?: true
 
         if (isTranslatable) {
@@ -65,9 +70,11 @@ fun main() {
             uniqueLanguages.forEachIndexed { _, language ->
                 val columnIndex = uniqueLanguages.indexOfFirst { it == language }
                 if (columnIndex != -1) {
+
                     val translatedString =
-                        if (matchingRow != null) matchingRow[columnIndex + 1].removeExcelWhitespaces() // +1 to skip the English column
-                        else {
+                        if (matchingRow != null /*&& columnIndex <= 10*/) {
+                            matchingRow[columnIndex + 1]//.removeExcelWhitespaces()   // +1 to skip the English column
+                        } else {
                             set.add(id to englishString)
                             "$englishString TODO"
                         }
@@ -83,6 +90,7 @@ fun main() {
     // Write the output XML files
     outputXmls.forEach { (language, outputXml) ->
         val outputFile = File("$resourceFolder/output2/$language.xml")
+//        val outputFile = File("$resourceFolder/outputcdata/$language.xml")
         outputFile.parentFile.mkdirs()
         val xmlOutputter = XMLOutputter(Format.getPrettyFormat())
         xmlOutputter.output(outputXml, FileOutputStream(outputFile))
@@ -97,6 +105,29 @@ fun getCellValue(cell: org.apache.poi.ss.usermodel.Cell): String {
     return when (cell.cellType) {
         CellType.STRING -> cell.stringCellValue
         CellType.NUMERIC -> cell.numericCellValue.toString()
+        else -> ""
+    }
+}
+
+fun getFullText(element: Element): String {
+    return element.content.joinToString("") { getFullText(it) }
+}
+
+fun getFullText(content: Content): String {
+    return when (content) {
+        is Element -> {
+            val tagName = content.name
+            val attributes = content.attributes.joinToString(" ") { "${it.name}='${it.value}'" }
+            val innerContent = content.content.joinToString("") { getFullText(it) }
+
+            if (attributes.isNotEmpty()) {
+                "<$tagName $attributes>$innerContent</$tagName>"
+            } else {
+                "<$tagName>$innerContent</$tagName>"
+            }
+        }
+        is CDATA -> "<![CDATA[${content.text}]]>"
+        is Text -> content.text
         else -> ""
     }
 }
